@@ -15,12 +15,33 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
+import com.amazonaws.http.HttpMethodName;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.amazonaws.mobileconnectors.apigateway.ApiClientFactory;
+import com.amazonaws.mobileconnectors.apigateway.ApiRequest;
+import com.amazonaws.mobileconnectors.apigateway.ApiResponse;
+import com.amazonaws.util.IOUtils;
+import com.amazonaws.util.StringUtils;
+
 import com.amazonaws.http.HttpClient;
 import com.amazonaws.mobile.client.AWSMobileClient;
 import com.amazonaws.mobileconnectors.dynamodbv2.dynamodbmapper.DynamoDBMapper;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 
+import com.amazonaws.mobile.api.idplg6j118m7.UserDetailsMobileHubClient;
+
+import com.amazonaws.mobileconnectors.lambdainvoker.*;
+import com.amazonaws.auth.CognitoCachingCredentialsProvider;
+import com.amazonaws.regions.Regions;
+
 public class MainActivity extends AppCompatActivity {
+
+    private static final String LOG_TAG = MainActivity.class.getSimpleName();
+
+    private UserDetailsMobileHubClient apiClient;
 
     private Button b_get;
     public double latitude;
@@ -49,14 +70,18 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        apiClient = new ApiClientFactory()
+                .credentialsProvider(AWSMobileClient.getInstance().getCredentialsProvider())
+                .build(UserDetailsMobileHubClient.class);
 
-        AWSMobileClient.getInstance().initialize(this).execute();
 
-        AmazonDynamoDBClient dynamoDBClient = new AmazonDynamoDBClient(AWSMobileClient.getInstance().getCredentialsProvider());
+        //AWSMobileClient.getInstance().initialize(this).execute();
+
+        /*AmazonDynamoDBClient dynamoDBClient = new AmazonDynamoDBClient(AWSMobileClient.getInstance().getCredentialsProvider());
         this.dynamoDBMapper = DynamoDBMapper.builder()
                 .dynamoDBClient(dynamoDBClient)
                 .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
-                .build();
+                .build();*/
     }
 
     public void setDefaults() {
@@ -109,6 +134,67 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.INTERNET},
                     3);
         }
+    }
+
+    public void callCloudLogic() {
+        // Create components of api request
+        final String method = "GET";
+
+        final String path = "/items";
+
+        final String body = "";
+        final byte[] content = body.getBytes(StringUtils.UTF8);
+
+        final Map parameters = new HashMap<>();
+        parameters.put("lang", "en_US");
+
+        final Map headers = new HashMap<>();
+
+        // Use components to create the api request
+        ApiRequest localRequest =
+                new ApiRequest(apiClient.getClass().getSimpleName())
+                        .withPath(path)
+                        .withHttpMethod(HttpMethodName.valueOf(method))
+                        .withHeaders(headers)
+                        .addHeader("Content-Type", "application/json")
+                        .withParameters(parameters);
+
+        // Only set body if it has content.
+        if (body.length() > 0) {
+            localRequest = localRequest
+                    .addHeader("Content-Length", String.valueOf(content.length))
+                    .withBody(content);
+        }
+
+        final ApiRequest request = localRequest;
+
+        // Make network call on background thread
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Log.d(LOG_TAG,
+                            "Invoking API w/ Request : " +
+                                    request.getHttpMethod() + ":" +
+                                    request.getPath());
+
+                    final ApiResponse response = apiClient.execute(request);
+
+                    final InputStream responseContentStream = response.getContent();
+
+                    if (responseContentStream != null) {
+                        final String responseData = IOUtils.toString(responseContentStream);
+                        Log.d(LOG_TAG, "Response : " + responseData);
+                    }
+
+                    Log.d(LOG_TAG, response.getStatusCode() + " " + response.getStatusText());
+
+                } catch (final Exception exception) {
+                    Log.e(LOG_TAG, exception.getMessage(), exception);
+                    exception.printStackTrace();
+                }
+            }
+        }).start();
     }
 
 
